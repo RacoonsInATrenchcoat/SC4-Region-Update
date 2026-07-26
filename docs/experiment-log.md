@@ -43,6 +43,8 @@ block of its colour (4x4 blue, 2x2 green, 1x1 red); blocks may sit at any
 offset provided they do not conflict. Recorded because it corrected a wrong
 design assumption early.
 
+Note, this was the AI's assumption and required multiple pushbacks to accept on how it works and loads, where this limitations does not exist.
+
 ## Phase A: mechanism tests
 
 ### a2-zero-time-propagation
