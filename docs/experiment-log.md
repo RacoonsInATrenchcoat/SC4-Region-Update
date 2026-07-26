@@ -81,6 +81,87 @@ Design impact: for utilities, a load/save touch suffices; no simulation phase
 required to ingest neighbour utility state. Does not yet generalise to
 commute/RCI (see a3, a5).
 
+### a2b-import-export-asymmetry (follow-up to a2)
+Question: is neighbour data updated symmetrically on both sides?
+
+Method: restored J->K 3k power export, both saved healthy at differing dates.
+In J, deleted the border connection (paused, then with months passing); neighbour
+deal persisted despite no connection. Saved J. Loaded K: on load, zero ticks,
+K showed power missing, import 0, deal 0, power icons present. Saved/exited K
+with no time passed. Reloaded J: J still showed the deal existing and exporting,
+after both cities saved with no connection.
+
+Result: **Asymmetric.** The CONSUMING side (K) recomputes its intake from the
+neighbour's saved file on load and self-corrects to reality with zero ticks. The
+PRODUCING side (J) carries its saved export/deal record forward and does NOT
+re-validate it against the consumer on load; it remained stale.
+
+Interpretation: each city, on load, recalculates what flows IN across its borders
+by reading neighbours' files, but trusts its own saved record of what it sends
+OUT. Import figures self-heal; export/deal records do not, absent manual action.
+
+Open questions (untested):
+- Does the producer self-correct if allowed to run N months (vs zero ticks)?
+- Is the persistent deal a by-design contract object (dissolves only on manual
+  cancel or expiry), independent of physical flow?
+
+Design impact: refreshing only a changed tile's NEIGHBOURS is likely
+insufficient; the changed (producing) tile may retain stale outgoing deals.
+Refresh design must account for the producer side, order, or deal handling.
+Elevates a4 (does the source tile need processing) from optional to important.
+
+### a2c-producer-reconciliation (follow-up to a2b)
+Question: under what condition does the producing tile (J) correct its stale
+outgoing export/deal?
+
+Method: after K had been saved reflecting the severed connection (0 import),
+loaded J and let it reach a month-end with no manual action.
+
+Result: **J self-corrected at the first month-end**, nullifying the phantom
+export, no user action. Contrast with a2b, where J was loaded BEFORE K had been
+saved with the connection gone, and did NOT self-correct.
+
+Interpretation: the producer reconciles its outflows at month-end by reading the
+NEIGHBOUR'S SAVED FILE, not physical reality. Correction therefore depends on the
+consumer having been saved-with-truth first. Inferred: had K never been loaded
+and saved post-change, J would export to a phantom indefinitely.
+
+Refined model:
+- Consumer recomputes inflows ON LOAD (instant, zero ticks).
+- Producer reconciles outflows AT MONTH-END, against the neighbour's saved file.
+Different triggers, different latencies; both read neighbour files.
+
+Open question: is the trigger specifically the month-end rollover, or just the
+next periodic checkpoint after some ticks? Affects how long a producer tile must
+run. (Loaded position within the month not controlled in this test.)
+
+Design impact (significant):
+- Refresh is ORDER-DEPENDENT: the changed/consumer side must be saved before the
+  producer is reconciled. Processing a producer against a stale neighbour file
+  leaves it wrong.
+- A single pass may not converge for multi-hop ripples; supports topological
+  ordering or repeat-until-stable.
+- Producer tiles are NOT zero-tick: they must run to at least the next month-end
+  to reconcile outgoing state. First hard evidence that some tiles need sim time.
+  Cost is small (<= ~1 in-game month).
+
+  ### Finding: cross-border reconciliation model (consolidated from a2/a2b/a2c)
+
+- Consumer recomputes inflows ON LOAD (instant, zero ticks).
+- Producer reconciles outflows AT EACH MONTH-END checkpoint, against the
+  neighbour's SAVED file (worst case ~31 in-game days to next checkpoint).
+- Correction depends on the neighbour having been saved-with-truth first =>
+  refresh is order-dependent.
+
+Hypothesis (inferred, not isolated): volatile intra-city quantities update on
+frequent internal ticks; cross-border / lower-volatility quantities reconcile at
+month-end. Predicts which subsystems need runtime vs a load touch.
+
+Thesis support: a region played without ever reopening a given tile drifts wrong,
+because the un-opened tile's saved file never updates for others to reconcile
+against. The tool's value is exhaustive, ordered reopen+save of exactly those
+tiles.
+
 ### a3-time-sweep
 Question: how many in-game months must a neighbour run before its figures
 reflect a change next door? (The unknown "N".)
