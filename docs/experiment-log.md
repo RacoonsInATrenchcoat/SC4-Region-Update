@@ -51,9 +51,35 @@ design assumption early.
 
 ### a2-zero-time-propagation
 Question: does a pure load-and-save (no time elapsed) move any neighbour data?
-Method: establish J and K with a cross-border connection; change J; save/exit;
-load K, immediately save/exit without unpausing; reload K and compare.
-Result: [pending]
+Signal: power import (utility), chosen for legibility and low sim lag.
+
+Fixture: J self-sufficient with power surplus, selling ~3k to K (K uses ~2.1k,
+no local generation). Power-only cross-border link; no road/water/other.
+
+Method: baseline K; in J, delete the border power connection and cancel the
+resulting neighbour deal; save J; load K paused with zero ticks; observe, then
+save/exit; reload K.
+
+Result: **Positive. Neighbour utility data updates at load time, zero game time
+elapsed.** On loading K (date unchanged, 10/2/06, no tick), power import had
+already dropped to 0, the power-supply graph had collapsed, the budget line for
+the power payment had updated, and the power advisor was already flagging the
+shortfall. A same-date reload showed identical metrics, confirming persistence.
+
+Notes:
+- The neighbour DEAL did not dissolve when the physical connection was deleted
+  on J's side; it required manual cancellation. Connection geometry and deal
+  contract are separate state. Flagged for a5-deal and for tool design (risk of
+  orphaned deals after an automated border change).
+- Advisor/icon cues lag the metrics: electricity icons appeared on 10/8/06 with
+  no underlying metric change. **Measurement must read metrics, not visual cues.**
+- Tested as supply-removed (3k -> 0). A supply-changed case (e.g. 3k -> 1k) not
+  yet tested; would confirm load-time ingestion reads the actual value, not just
+  deal presence.
+
+Design impact: for utilities, a load/save touch suffices; no simulation phase
+required to ingest neighbour utility state. Does not yet generalise to
+commute/RCI (see a3, a5).
 
 ### a3-time-sweep
 Question: how many in-game months must a neighbour run before its figures
