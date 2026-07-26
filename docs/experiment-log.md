@@ -26,9 +26,11 @@ labels: see below.
     SSSSSSSLLLLLLLL
     SSSSSSSLLLLLLLL
 
-A=large(0-3,0-3)  B=med(4-5,0-3)  D=med(0-1,4-5)  F=large(4-7,4-7)
-G=med(0-1,8-9)  H=med(13-14,8-9)  J=large(7-10,11-14)  K=large(11-14,11-14)
-W1=gap(2,6)  W2=gap(14,10)
+A=large(0-3,0-3)   B=med(4-5,0-1)   C=med(4-5,2-3)   D=med(0-1,4-5)
+F=large(4-7,4-7)   G=med(0-1,8-9)   H=med(13-14,8-9)
+J=large(7-10,11-14)   K=large(11-14,11-14)
+W1=gap(2,6)   W2=gap(14,10)
+S=small (remainder)
 
 Primary propagation pair: J and K (large-large, full shared edge).
 Mixed-size hub: A (medium and small neighbours).
