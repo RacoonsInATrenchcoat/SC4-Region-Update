@@ -162,12 +162,57 @@ because the un-opened tile's saved file never updates for others to reconcile
 against. The tool's value is exhaustive, ordered reopen+save of exactly those
 tiles.
 
-### a3-time-sweep
-Question: how many in-game months must a neighbour run before its figures
-reflect a change next door? (The unknown "N".)
-Method: repeat a2, letting K run 1/3/6/12/24 months before saving; restore from
-backup between trials. Record where figures stop changing.
-Result: [pending]
+### a2-commute / a3-time-sweep (combined)
+Question: does commute/RCI update at load-time (like utilities) or require
+simulation months? What is Y?
+
+Fixture: J worker-heavy (residential > local jobs, jobless icons), K job-heavy
+(Ind/Com > local residential). Highway + rail (passenger + cargo) across border,
+power still sold. Both established/stable/saved.
+
+Metric note/confound: no clean "commuters in" figure exists. Used Jobs&Pop graphs
+(Ind-Dirty, Ind-Mfg, Ind-HT, Ind-Ag, Com) as proxies. The graphs do NOT
+distinguish internal vs commuted-in workers, and a single facility may count
+toward both tiles. Absolute values therefore partly contaminated; conclusions
+drawn from direction/magnitude of change and its timing, not exact accounting.
+
+Baseline sensitivity check (disconnect test):
+- Disconnecting J dropped J's Ind-M 5.5k->3.9k, Ind-D 16k->13k, Com$$ 3.6k->3.2k.
+  Reconnected/unsaved, J recovered to ~16k I-D, ~5.5k I-M over a year.
+- Disconnecting K (~6 mo) dropped K's I-HT 800->250, I-Ag 2900->2600; I-M and I-D
+  ~unchanged. Asymmetry consistent with J being the worker source.
+
+Test:
+2. Change J: added large residential (77k->88k pop) + bus. Stabilised 5 yrs.
+   J I-D ~16k, I-M ~5.5k stable. Saved 10/3/48.
+3. Load K (7/9/26), PAUSED: I-HT 800, I-M 5k, I-D 0, I-Ag 2900. **No change on
+   load/pause** (contrast utilities, which changed instantly on load).
+4. Run K Cheetah to 1/3/30 (~4 yrs): I-HT 800->2100, I-M 5k->5100, I-Ag
+   2900->3200, commercial sharp rises (Cs$$ 3.2k->5.8k). I-D stayed 0.
+
+Result: **Commute/RCI is a SIMULATED equilibrium, NOT a load-time read.** Changes
+appear only through ticks, spread over YEARS, in steps, with some metrics not yet
+plateaued at 4 yrs. I-HT notably FELL for several years before rising sharply
+(inferred: an internal gate, e.g. education/staffing, indirectly delays the
+commute response).
+
+Y (commute) ~= 3-5 in-game YEARS to capture the bulk of re-allocation; full
+plateau may not exist where settling depends on user zoning decisions the tool
+can't make.
+
+Design impact:
+- Y must be sized for the SLOWEST subsystem (commute), so Y is large (years),
+  vs utilities' month-end. A single per-tile Y is wasteful for utility-only
+  relationships / insufficient for commute-heavy ones.
+- Confirms rejection of "repeat-until-stable" (D16): I-HT's transient decline
+  before rising would fool a naive stability check into stopping early.
+- Large Y raises per-pass cost sharply -> favours minimising tiles touched
+  (edge-adjacency v2) and low Z; weakens "crude whole-region multi-pass".
+- Elevates fast-speed mode (D21) from optional toward necessary: 4 yrs at vanilla
+  Cheetah ~= 144 s/tile before I/O; unmanageable region-wide without tick unlock.
+
+Design idea (deferred): split resync into a fast utility-only sweep (zero-tick
+load/save) vs a slow full resync (Y years). Maps to dual-mode thinking.
 
 ### a4-source-side-requirement
 Question: does the changed tile also need simulation time, or only the receiver?
@@ -193,3 +238,40 @@ Result: [pending]
 ### a9-date-drift
 Question: does divergent in-game date between tiles cause problems?
 Result: [pending]
+
+### d3-render-cost / sim-speed-limiter (vanilla)
+Question: does reducing render load speed up the simulation? Is Cheetah
+render-bound or tick-locked?
+
+Method: 62k-pop city, max zoom out, paused baseline. Measured FPS per speed and
+approx month duration at Cheetah, high detail vs all-low detail (restarted to
+apply).
+
+Data:
+- FPS is fixed per SIM speed, not per load: Normal ~30, Rhino ~20, Cheetah ~15,
+  stable regardless of city size or detail. Uncapped moments (menus/idle) spike
+  to 400-1000+ fps, proving the renderer has large spare capacity.
+- Cheetah ~= 3 s/month at high detail; ~2.7 s/month (marginal, within eyeball
+  noise) at low detail. FPS averages unchanged by detail.
+
+Result: **Simulation is TICK-LOCKED, not render-bound.** The renderer runs free
+(hundreds of fps available) while sim speed is paced to a fixed internal tick
+rate per speed setting. Low detail / small window / zoom-out do NOT meaningfully
+speed the sim because the sim never waits on rendering.
+
+Correction: earlier assumption (render suppression as the primary speed lever)
+is DISPROVEN for simulation speed. Render suppression may still help if a future
+faster tick rate becomes render-bound, but at vanilla speeds it does not.
+
+Implication: going faster requires changing the tick-rate data (per Super-Speed
+Mod, values in SimCity_1.dat; 2x/4x/8x Cheetah variants exist), not relieving
+hardware load. Expect a stability cost at higher tick rates (mod author warns to
+reduce speed before saving; consistent with our existing save-at-normal-speed
+requirement from a2c).
+
+Side observation: a ~30fps floor engages during active simulation (likely a
+frame cap / vsync), disengaging during idle/menu (the spikes). Separate from
+tick rate; noted, not tested.
+
+Open: confirm detail-independence with stopwatch-timed 12-month runs (high vs
+low) to convert "feels same" into a measured yes/no.
