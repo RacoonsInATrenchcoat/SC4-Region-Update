@@ -154,3 +154,15 @@ session).
 possibly never fully plateauing. Y is sized for this worst case. Consequences:
 minimise tiles per pass, keep Z low, and treat fast-speed mode as important not
 optional. Consider (later) separate fast utility-only vs slow full-resync modes.
+
+**D25. Neighbour = shared edge AND a connection across it.** a7: corner/diagonal
+contact connects nothing (no border offered). a8: shared edge without a
+road/rail/power/water connection transmits nothing (no utility, no RCI
+propagation). Therefore:
+- Planner adjacency excludes corner-only pairs (confirmed).
+- v2 (edge-adjacency) stays the correct default/fallback - never wrong, only
+  sometimes wasteful.
+- v3 (connection-aware) is upgraded from "someday" to "worth building": a8 proves
+  skipping unconnected neighbours wastes nothing, and D24 (each tile costs YEARS)
+  makes that saving significant. Detection target: presence of road/rail/power/
+  water across the shared edge (network/power/water subfiles).
