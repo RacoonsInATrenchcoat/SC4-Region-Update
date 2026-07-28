@@ -100,3 +100,51 @@ load pipeline, persisting state across a city exit within a region, and
 enumerating every tile's statistics from region view without loading them. The
 gzcom-dll framework and the SC4Fix loader make DLL plugins viable on the current
 Steam build. What is unproven is only the city-load command above.
+
+## How the tool works (high-level)
+
+Configuration: an .ini holds defaults (traversal order; Y = per-tile sim
+duration; Z = pass count; speed mode). User overrides via UI (v2) or .ini (v1).
+
+On run:
+1. Back up the whole region folder (config.bmp + all .sc4 + region.ini) to a
+   separate location, as a NEW timestamped backup. Keep the newest 5; when making
+   a 6th, delete the OLDEST (never overwrite the most recent). Retained until the
+   user is satisfied.
+2. Determine active tiles: a tile is "active" if an established city save exists
+   for its cell. Detection is an IN-PROCESS query to the game's region interface
+   (same source sc4-region-census uses to enumerate tiles + positions), NOT
+   filename parsing - filenames encode city name, not cell position; position
+   lives inside the save. (Build-phase: confirm the interface exposes tile
+   positions.) Never-used empty tiles are excluded (zero impact).
+3. Take control: lock user input; show a non-blocking progress panel. Hold focus
+   if needed (focus-loss sim behaviour is an open question - audio cuts on
+   tab-out, so sim continuation must be verified in build).
+4. For Z passes (default >= 2), over active tiles in the chosen fixed order,
+   for each tile:
+   a. Load the tile.
+   b. Run at fast speed (if fast mode) until the in-game date advances by Y.
+      Y defaults ~1 year (commute/RCI needs years for substantial effects, D24);
+      user-adjustable, floor = one month-end (utility producer reconciliation).
+      A low Y acts as a fast "lite" utility-oriented pass; a high Y as a full
+      commute resync. One knob spans both.
+   c. Drop to normal speed before saving (stability, a2c).
+   d. Save; exit to region.
+   e. Update a plain-text progress marker (tile list, current tile, pass,
+      started/finished flag).
+5. The tool is ORDER-BLIND by design: it does NOT track producers/consumers or
+   dependency direction (rejected as scope, D17). The producer/consumer asymmetry
+   (D13) and contention allocation (D26) are handled STATISTICALLY by running all
+   tiles equally for Z passes - a tile left stale in pass 1 is reconciled in a
+   later pass. No convergence detection (no reliable "stable" metric; the sim
+   never fully settles, D16). This is why Z defaults to >= 2.
+6. On completion: release control, restore normal speed, return to region view,
+   mark the progress file "finished", and show a terminal pop-up (human
+   notification only, not load-bearing).
+
+Crash handling: on launch, if a progress marker exists without "finished", a
+prior run was interrupted. v1: detect-and-warn (point the user to their backup;
+offer restart). v2: resume from the last completed tile. Scope is small - a
+plain-text file, no database.
+
+End position: wherever the run lands, or region view. No special handling.
