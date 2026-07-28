@@ -100,3 +100,57 @@ cost exceeding the rest of the tool. Payoff over positional traversal + Z passes
 is marginal, and it does not help the coupled-cycle case at all. Bounded
 iteration (D16) absorbs cycles without needing to detect them. Documented as a
 conscious scope decision.
+
+**D18a. Revised: sim speed is tick-locked, not render-bound (d3).** The speed
+lever is the tick-rate data in SimCity_1.dat (third-party Super-Speed Mod
+precedent), not render suppression. This raises the risk/cost of the
+"crude multi-pass" strategy: extra speed is available only via a data mod with a
+stability cost, not for free via low detail. Reinforces keeping Y/Z
+user-bounded and saving at normal speed.
+
+**D19. Region geometry comes from config.bmp; region identity differs by
+component.** Planner parses config.bmp (pixel->cell, colour->size, contiguous
+blocks->tiles, "other"->empty) to reconstruct the tile inventory. An EXTERNAL
+planner needs the region name/path (via .ini). An IN-PROCESS executor does NOT:
+it asks the game for the active region (same interfaces sc4-region-census uses).
+Reinforces Planner/Executor separability.
+
+**D20. Custom in-game UI is feasible (precedent found), but deferred to v2.**
+DLL plugins already add interactive controls to SC4 UI (sc4-more-building-styles:
+checkboxes/radio buttons via UI template + memory patch; sc4-query-ui-hooks:
+dialog hooks; sc4-region-census: region-view panel; submenus-dll: new menus).
+UI is authored in the game's resource format (iLive's Reader/TGI), a distinct
+toolchain. v1 ships with .ini config; in-game panel is a real v2 target. Third
+path noted: a browser-served settings page via a plugin TCP server (precedent:
+sc4 web-interface plugin), avoiding native UI authoring.
+
+**D21. Dual speed mode, user-selectable, self-contained.** .ini SpeedMode=
+vanilla|fast. Vanilla drives tiles at the game's Cheetah, never altering tick
+rate. Fast applies an elevated tick rate for the simulate phase only, dropping to
+normal before each save (required anyway per a2c/save-stability). Shared
+load/simulate/save skeleton; modes differ by one speed call. Default: vanilla
+(fast carries the tick-rate stability risk from D18a). The tick-rate logic is to
+be implemented within this mod, NOT as a dependency on the third-party
+Super-Speed Mod.
+
+**D22. Licensing/attribution discipline from day one.** Prefer reverse-
+engineering the tick-rate mechanism ourselves (lean on documentation of WHICH
+values, write our own code) over copying third-party implementation: cleaner
+licensing, stronger as original work. Note gzcom-dll is LGPL v2.1+ (dynamic
+linking with SC4 permitted; modifications to gzcom-dll must be shared under LGPL);
+several reference plugins are MIT. Maintain an ATTRIBUTIONS/LICENSES file listing
+every framework/header used and its licence. Do not copy Super-Speed Mod code
+without honouring its licence.
+
+**D23. Simulation phase terminates on in-game date, not wall-clock.** Executor
+runs each tile until game date advances by Y months, using the game's own date as
+loop condition. Machine- and tick-rate-independent; correct in both speed modes.
+Supersedes any real-time-timer approach (removes the old macro sleep-timing
+weakness). Stopwatch real-time measurement therefore unnecessary (per this
+session).
+
+**D24. Commute/RCI needs YEARS of simulation; sets Y large.** Unlike utilities
+(load-time), commute is a re-derived equilibrium requiring ~3-5 in-game years,
+possibly never fully plateauing. Y is sized for this worst case. Consequences:
+minimise tiles per pass, keep Z low, and treat fast-speed mode as important not
+optional. Consider (later) separate fast utility-only vs slow full-resync modes.
