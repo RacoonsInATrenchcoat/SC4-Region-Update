@@ -228,13 +228,33 @@ passes converge?
 Result: [pending]
 
 ### a7-corner-contact
-Question: does corner-only contact (A/F) transmit any neighbour data?
-Result: [pending]
+Question: does corner-only (diagonal) contact transmit anything?
+Method: A with power plant + edge connections; F built residential needing power,
+corner-only contact with A. Ran a few months to confirm.
+Result: **Nothing. The game offered no power-import option to F at all** - no
+connectable border exists across a corner. Corner/diagonal adjacency is
+functionally not adjacency. Confirms Planner rule: corner-only pairs are NOT
+neighbours.
 
-### a8-adjacent-unconnected
-Question: does edge adjacency alone matter, or only actual connections?
-Result: [pending]
+### a8-adjacent-but-unconnected
+Question: does a shared edge with NO connection transmit anything?
+Method: D edge-adjacent to A but with no road/rail/power/water across the edge.
+D needed power; no import option appeared. Cross-check: changed J, saw J's RCI
+move, returned to D - D unchanged. Ran a few months to confirm.
+Result: **Nothing crosses an unconnected edge.** No utility import possible; a
+neighbour's RCI change does not reach an unconnected tile. Edge-adjacency alone
+is inert without a connection.
 
+Regional-RCI note (out of scope): tiles carry a baseline regional demand that
+exists even in isolation (observed on D). There are also region-wide effects
+(airports; certain hardcoded caps, possibly tile-scoped). These are ambient/
+hardcoded, present regardless of connection, and are NOT neighbour-to-neighbour
+flows that go stale - so not something a refresh changes. Noted, not targeted.
+
+Design impact: confirms "connection present" as the exact discriminator between
+propagating and inert neighbours. Validates v3 (connection-aware refresh) as a
+REAL saving, not a marginal one, because a8 proves unconnected neighbours are
+pure wasted work.
 ### a9-date-drift
 Question: does divergent in-game date between tiles cause problems?
 Result: [pending]
