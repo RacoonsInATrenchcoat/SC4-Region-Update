@@ -156,3 +156,32 @@ Corroboration: the Disable FPS Limits mod confirms the 30/20/15 caps and lifts
 them (up to 255), speeding the simulation directly. Once lifted, rendering becomes
 the bottleneck, so render suppression then helps. The two levers stack, in that
 order.
+
+## Prior-art check (design phase)
+
+No existing mod or tool automates the load/simulate/save cycle across a region's
+tiles to resync neighbour data. The concept is novel. Adjacent work found:
+
+- Multiplayer-region sync (Syncthing-based): shares region folders so saves
+  propagate between players. Independently confirms the border-reconciliation
+  mechanism (D13) — players are told they cannot edit adjacent tiles
+  simultaneously because border changes trigger tile updates. Works around the
+  limitation with human coordination; does not automate reconciliation.
+- Save Warning mod: confirms saving writes tile data AND updates neighbouring
+  tiles, and confirms the corruption failure mode (CTD or flat/missing tile) that
+  our backup + crash-marker design targets.
+- SC4AutoSave, RCI DLL Query Upgrade (Null45), sc4-region-census: share
+  individual COMPONENTS with our design (programmatic save; region-level tile
+  enumeration; richer RCI/workforce stats via DLL) but none combine them into a
+  region refresh.
+
+Build-relevant findings:
+- **HARD REQUIREMENT:** backups must go OUTSIDE the live region folder. If two
+  copies of a city exist in a region folder at startup, the game keeps only the
+  alphabetically-first and DELETES or relocates the rest. A backup placed inside
+  the region folder would cause silent city loss. (PCGamingWiki.)
+- The commute measurement confound (a2-commute: graphs don't separate
+  internal/commuted/commercial-vs-total workforce) has a known DLL-based solution
+  path (Null45's RCI DLL functionality), if cleaner metrics are ever needed.
+- The community's prop-pox repair (open tile, save, exit, toggle City Detail) is
+  a manual precedent for our per-tile loop and for the detail/speed interaction.
