@@ -10,6 +10,10 @@ automated, and the tooling built to do so.
 
 **Status:** research and design phase. No release yet.
 
+## Requirements
+
+This mod is standalone and requires no other mods to function. It works on a clean base-game install (version 641). It is compatible with NAM, CAM, and other gameplay mods, which change how cities simulate but do not affect how this tool operates. For faster processing, the mod includes an optional built-in speed boost (fast mode); users who prefer a separate solution can also use the standalone Disable FPS Limits mod, with which this tool composes naturally.
+
 ## Why this project exists
 
 This is a learning-and-portfolio project, not a commercial product. SimCity 4
