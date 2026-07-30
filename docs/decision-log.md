@@ -100,3 +100,9 @@ Grouped by working session.
   region folder — the game deletes/relocates duplicate cities at startup, keeping
   only the alphabetically-first. Note: richer commute metrics available via Null45's
   RCI DLL if the graph-based measurement confound needs resolving.
+**D32. Backup location: under the mod's own folder tree, outside Regions/.**
+Backups written to e.g. Documents/SimCity 4/Region-Updater-Mod/Backup/<RegionName>/
+— a sibling of Regions/, never inside it, so the game's duplicate-city
+deletion/relocation at startup (D31) cannot affect them. Tool creates the backup;
+the user decides when to restore/overwrite. Confirms D31's hard requirement with a
+concrete path.
