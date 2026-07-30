@@ -94,3 +94,9 @@ Grouped by working session.
   implementation; absent it, degrades gracefully to vanilla Cheetah. This
   supersedes D21's dual-mode: the tool always sets Cheetah and runs to a date, and
   speed is determined by the user's setup. Simpler, fewer conflict surfaces.
+- **D31. Prior-art confirmed absent; one hard build requirement surfaced.** No tool
+  does region-wide neighbour resync; the project is novel (community works around it
+  manually or via multiplayer sync). Hard requirement: backups go OUTSIDE the live
+  region folder — the game deletes/relocates duplicate cities at startup, keeping
+  only the alphabetically-first. Note: richer commute metrics available via Null45's
+  RCI DLL if the graph-based measurement confound needs resolving.
