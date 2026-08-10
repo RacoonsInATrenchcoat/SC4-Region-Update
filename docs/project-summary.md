@@ -182,6 +182,8 @@ degrades gracefully to vanilla Cheetah speed (slower, fully functional).
 - Distribution: target sc4pac compatibility. DLL and `.ini` go in the top-level
   Plugins folder (DLLs cannot live in subfolders). Keep versioning and folder
   layout clean from the first commit.
+- **Director ID: 0xE04809A9** (SC4RegionUpdate's unique plugin identifier).
+Randomly generated; needed to remain unique among co-installed SC4 DLL plugins.
 
 ## Known unknowns (build-phase, not design-phase)
 
