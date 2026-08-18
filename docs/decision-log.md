@@ -106,3 +106,34 @@ Backups written to e.g. Documents/SimCity 4/Region-Updater-Mod/Backup/<RegionNam
 deletion/relocation at startup (D31) cannot affect them. Tool creates the backup;
 the user decides when to restore/overwrite. Confirms D31's hard requirement with a
 concrete path.
+
+**Decision (signal choice): prefer semantic alignment over coincidental timing.**
+kMessageSetRadioStation fires reliably at load and was proposed as the "city
+ready" trigger. Rejected as PRIMARY despite working: it is an audio-setup signal
+that only coincides with load timing, making it fragile (audio mods/patches could
+move it) and semantically confusing. Chosen instead:
+- kSC4MessagePostCityInitComplete (0xEA8AE29A): city fully initialised.
+- kSC4MessageConnectionsReady (0x6AC284F3): neighbour connections live - the
+  signal whose MEANING matches this tool's purpose (neighbour sync).
+Also clarified: the hello-world box appearing "on the loading screen" is an
+artifact of the modal MessageBox blocking the thread mid-transition, NOT evidence
+that PostCityInitComplete is too early. The real tool's non-blocking actions will
+not have this artifact.
+
+**Decision (two-phase load handling): prime early, act after settle.**
+Split the tool's per-tile reaction into two phases:
+- Prime at kSC4MessagePostCityInitComplete: set internal state, mark the tile as
+  in-progress. Cheap and safe.
+- Act at kSC4MessageConnectionsReady (after the game's own load-time hidden-pause
+  settles): change speed, run the simulate phase. Deferring the SPEED change
+  avoids fighting the game's load-time pause/speed management (SimHiddenPauseChange
+  fires during load). Rationale from the load message sequence.
+
+  **Build finding: ConnectionsReady fires on EVERY city load, even isolated tiles.**
+Tested a tile with zero neighbour connections (island/solitary case). 
+kSC4MessageConnectionsReady still fired on load, both entries. Conclusion: it
+signals "connection-loading step complete", NOT "connections exist". Therefore
+safe as the universal "act" trigger, an isolated tile will not hang the tool
+waiting for a signal that never comes. The milestone sequence
+(PostCityInitComplete -> SimHiddenPauseChange -> ConnectionsReady -> SimNewDay)
+is stable across connected and isolated tiles.
