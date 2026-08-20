@@ -11,48 +11,57 @@
 //
 ////////////////////////////////////////////////////////////////////////
 
-// Framework and game interface headers this plugin needs.
-// (Auto-save-specific includes for its timer/settings/service were removed.)
-#include "Logger.h"                    // Writes status/debug lines to a .log file.
-#include "version.h"                   // Provides PLUGIN_VERSION_STR.
-#include "cIGZFrameWork.h"             // The game's framework, for hooking in at startup.
+#include "Logger.h"
+#include "version.h"
+#include "cIGZFrameWork.h"
 #include "cIGZApp.h"
-#include "cISC4City.h"                 // Represents a loaded city tile.
-#include "cIGZMessageServer2.h"        // Lets us subscribe to game event messages.
+#include "cISC4App.h"                  // Top-level game app: gateway to the region.
+#include "cISC4Region.h"               // The region: holds the list of city tiles.
+#include "cISC4RegionalCity.h"         // One city tile (position, size, established...).
+#include "cIGZMessageServer2.h"
 #include "cIGZMessage2.h"
 #include "cIGZMessage2Standard.h"
-#include "cRZMessage2COMDirector.h"    // Base class: a plugin director that handles messages.
-#include "GZServPtrs.h"
+#include "cIGZString.h"                // For reading city names into a string.
+#include "cRZBaseString.h"             // A concrete cIGZString we can write into.
+#include "cRZMessage2COMDirector.h"
+#include "GZServPtrs.h"                // Provides cISC4AppPtr (how we reach the app).
 #include <filesystem>
+#include <list>
 #include <vector>
 #include <Windows.h>
 #include "wil/resource.h"
 #include "wil/filesystem.h"
+#include "cIGZCheatCodeManager.h"
+#include "cIGZMessageTarget2.h"
 
-// Message ID the game broadcasts when a city has finished loading.
-// This is the single event this hello-world version reacts to.
-static constexpr uint32_t kSC4MessagePostCityInit = 0x26d31ec1;
+// Fires when region view is entered. We enumerate the region's tiles here.
+static constexpr uint32_t kSC4MessagePostRegionInit = 0xCBB5BB45;
 
-// This plugin's unique identifier. Must not clash with any other installed
-// DLL plugin. Randomly generated for SC4RegionUpdate.
+// City fully loaded (kept for later; not used by this enumeration step).
+static constexpr uint32_t kSC4MessagePostCityInitComplete = 0xEA8AE29A;
+
 static constexpr uint32_t kRegionUpdatePluginDirectorID = 0xE04809A9;
 
-// Name of the log file this plugin writes (created next to the DLL).
 static constexpr std::string_view PluginLogFileName = "SC4RegionUpdate.log";
 
-// The director IS the plugin. The game creates one of these and talks to it.
-// Inherits from cRZMessage2COMDirector so it can receive game event messages.
+// Using for testing:
+// Cheat-code support. The game sends this message type when any cheat is typed.
+static constexpr uint32_t kMessageCheatIssued = 0x230e27ac;
+// Our unique cheat ID (reuse the director-ID style: random, unique).
+static constexpr uint32_t kEnumTilesCheatID = 0xE0480A01;
+// The text the user types in the cheat box.
+static constexpr std::string_view EnumTilesCheatName = "enumtiles";
+
 class cRegionUpdateDllDirector : public cRZMessage2COMDirector
 {
 public:
 
-	// Runs once when the plugin object is created: sets up the log file.
 	cRegionUpdateDllDirector()
 	{
 		std::filesystem::path dllFolder = GetDllFolderPath();
 
 		std::filesystem::path logFilePath = dllFolder;
-		logFilePath /= PluginLogFileName;   // Put the log next to the DLL.
+		logFilePath /= PluginLogFileName;
 
 		Logger& logger = Logger::GetInstance();
 
@@ -60,76 +69,147 @@ public:
 		logger.WriteLogFileHeader("SC4RegionUpdate v" PLUGIN_VERSION_STR);
 	}
 
-	// The game uses this to identify the plugin. Returns our unique ID.
 	uint32_t GetDirectorID() const
 	{
 		return kRegionUpdatePluginDirectorID;
 	}
 
-	// Called when a city finishes loading. This is where THIS plugin's
-	// behaviour lives. For now it just logs and shows a confirmation box;
-	// later this is where the region-refresh logic will go.
-	void PostCityInit(cIGZMessage2Standard* pStandardMsg)
+	// Walks every tile in the current region and logs its details.
+	// This is the Planner's core data-gathering, proven here by logging.
+	void EnumerateRegionTiles()
 	{
-		// The message carries a pointer to the city that was loaded.
-		cISC4City* pCity = reinterpret_cast<cISC4City*>(pStandardMsg->GetIGZUnknown());
+		Logger& logger = Logger::GetInstance();
+		logger.WriteLine(LogLevel::Info, "=== EnumerateRegionTiles: START ===");
 
-		if (pCity)
+		cISC4AppPtr pApp;
+		if (!pApp) { logger.WriteLine(LogLevel::Error, "  no app."); return; }
+
+		cISC4Region* pRegion = pApp->GetRegion();
+		if (!pRegion) { logger.WriteLine(LogLevel::Error, "  no region."); return; }
+
+		// Discover the region's real bounds: [minX, minY, maxX, maxY].
+		int32_t rect[8] = { 0 };
+		pRegion->GetBoundingRect(reinterpret_cast<intptr_t>(rect));
+		int32_t minX = rect[0], minY = rect[1], maxX = rect[2], maxY = rect[3];
+		logger.WriteLineFormatted(LogLevel::Info,
+			"  region bounds: x %d..%d, y %d..%d", minX, maxX, minY, maxY);
+
+		// Scan every cell in bounds. A multi-cell tile appears once per cell,
+		// so we de-duplicate by the tile's reported origin position.
+		std::vector<std::pair<int32_t, int32_t>> seenPositions;
+		int uniqueTiles = 0;
+		int establishedTiles = 0;
+
+		for (int32_t y = minY; y <= maxY; y++)
 		{
-			Logger::GetInstance().WriteLine(LogLevel::Info, "PostCityInit fired: a city was loaded.");
-
-			// Visible proof the plugin ran. Hello-world milestone.
-			MessageBoxA(
-				nullptr,
-				"SC4RegionUpdate is loaded and a city was entered.",
-				"SC4RegionUpdate",
-				MB_OK | MB_ICONINFORMATION);
-		}
-	}
-
-	// The "switchboard": every subscribed game event arrives here, and we
-	// route it to the right handler based on its type. Only one case for now.
-	bool DoMessage(cIGZMessage2* pMessage)
-	{
-		cIGZMessage2Standard* pStandardMsg = static_cast<cIGZMessage2Standard*>(pMessage);
-		uint32_t dwType = pMessage->GetType();
-
-		switch (dwType)
-		{
-		case kSC4MessagePostCityInit:
-			PostCityInit(pStandardMsg);
-			break;
-		}
-
-		return true;
-	}
-
-	// Runs once at application startup. This is where we tell the game which
-	// events we want to be notified about (here: just "city loaded").
-	bool PostAppInit()
-	{
-		cIGZMessageServer2Ptr pMsgServ;   // Handle to the game's message system.
-		if (pMsgServ)
-		{
-			// Subscribe to the city-loaded event so DoMessage() will receive it.
-			if (!pMsgServ->AddNotification(this, kSC4MessagePostCityInit))
+			for (int32_t x = minX; x <= maxX; x++)
 			{
-				MessageBoxA(nullptr, "Failed to subscribe to the required notifications.", "SC4RegionUpdate", MB_OK | MB_ICONERROR);
-				return false;
+				auto ppCity = pRegion->GetCity(
+					static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+
+				if (!ppCity || !*ppCity)
+				{
+					continue;   // Empty cell (no tile here).
+				}
+
+				cISC4RegionalCity* pCity = *ppCity;
+
+				int32_t px = 0, pz = 0;
+				pCity->GetPosition(px, pz);
+
+				// Skip if we've already recorded this tile (from another of its cells).
+				bool alreadySeen = false;
+				for (const auto& p : seenPositions)
+				{
+					if (p.first == px && p.second == pz)
+					{
+						alreadySeen = true;
+						break;
+					}
+				}
+				if (alreadySeen)
+				{
+					continue;
+				}
+				seenPositions.push_back({ px, pz });
+
+				// First time seeing this tile: record its details.
+				int32_t sx = 0, sz = 0;
+				pCity->GetCitySize(sx, sz);
+				bool est = pCity->GetEstablished();
+
+				uniqueTiles++;
+				if (est)
+				{
+					establishedTiles++;
+				}
+
+				logger.WriteLineFormatted(LogLevel::Info,
+					"  Tile: pos(%d,%d) size %dx%d established=%s",
+					px, pz, sx, sz, est ? "yes" : "no");
 			}
 		}
-		else
+
+		logger.WriteLineFormatted(LogLevel::Info,
+			"=== END: %d unique tiles (%d established) ===",
+			uniqueTiles, establishedTiles);
+	}
+
+	// The switchboard: routes subscribed events to their handlers.
+	bool DoMessage(cIGZMessage2* pMessage)
+	{
+		uint32_t dwType = pMessage->GetType();
+
+		if (dwType == kMessageCheatIssued)
 		{
-			// The message system wasn't available; the plugin can't function.
-			MessageBoxA(nullptr, "Failed to subscribe to the required notifications.", "SC4RegionUpdate", MB_OK | MB_ICONERROR);
-			return false;
+			cIGZMessage2Standard* pStd = static_cast<cIGZMessage2Standard*>(pMessage);
+			uint32_t cheatID = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(pStd->GetVoid1()));
+
+			Logger::GetInstance().WriteLineFormatted(LogLevel::Info, "Cheat issued, id=0x%08X", cheatID);
+
+			if (cheatID == kEnumTilesCheatID)
+			{
+				EnumerateRegionTiles();
+			}
 		}
 
 		return true;
 	}
 
-	// Called very early by the framework. Hooks this director into the game
-	// so it will receive the lifecycle callbacks above. Standard boilerplate.
+	// At startup, subscribe to the "region entered" event.
+	bool PostAppInit()
+	{
+		Logger::GetInstance().WriteLine(LogLevel::Info, "PostAppInit: starting.");
+
+		// Subscribe to game messages (we keep the cheat-issued message here).
+		cIGZMessageServer2Ptr pMsgServ;
+		if (pMsgServ)
+		{
+			pMsgServ->AddNotification(this, kMessageCheatIssued);
+			Logger::GetInstance().WriteLine(LogLevel::Info, "PostAppInit: subscribed to cheat messages.");
+		}
+
+		// Register our cheat code with the game.
+		cISC4AppPtr pApp;
+		if (pApp)
+		{
+			cIGZCheatCodeManager* pCheatMgr = pApp->GetCheatCodeManager();
+			if (pCheatMgr)
+			{
+				cRZBaseString cheatName(EnumTilesCheatName.data());
+				pCheatMgr->AddNotification2(this, 0);
+				bool reg = pCheatMgr->RegisterCheatCode(kEnumTilesCheatID, cheatName);
+				Logger::GetInstance().WriteLineFormatted(LogLevel::Info, "PostAppInit: cheat registered = %s", reg ? "true" : "false");
+			}
+			else
+			{
+				Logger::GetInstance().WriteLine(LogLevel::Error, "PostAppInit: no cheat manager.");
+			}
+		}
+
+		return true;
+	}
+
 	bool OnStart(cIGZCOM* pCOM)
 	{
 		cIGZFrameWork* const pFramework = RZGetFrameWork();
@@ -148,8 +228,6 @@ public:
 
 private:
 
-	// Helper: finds the folder this DLL is running from, so the log file
-	// can be written next to it rather than in some unpredictable location.
 	std::filesystem::path GetDllFolderPath()
 	{
 		wil::unique_cotaskmem_string modulePath = wil::GetModuleFileNameW(wil::GetModuleInstanceHandle());
@@ -160,9 +238,6 @@ private:
 	}
 };
 
-// The single entry point the game looks for. It creates the director object
-// and hands it to the game. Every SC4 DLL plugin must provide this function
-// with exactly this name.
 cRZCOMDllDirector* RZGetCOMDllDirector() {
 	static cRegionUpdateDllDirector sDirector;
 	return &sDirector;
