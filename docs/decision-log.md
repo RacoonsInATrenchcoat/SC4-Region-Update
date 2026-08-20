@@ -137,3 +137,9 @@ safe as the universal "act" trigger, an isolated tile will not hang the tool
 waiting for a signal that never comes. The milestone sequence
 (PostCityInitComplete -> SimHiddenPauseChange -> ConnectionsReady -> SimNewDay)
 is stable across connected and isolated tiles.
+
+**Decision: verbose enumeration logging is a Debug-level, settings-controlled option.**
+The per-tile enumeration output logs at LogLevel::Debug (summary counts at Info).
+The .ini exposes a log-level setting (default Error/Info). Users troubleshooting
+set it to Debug to get full tile output. Reuses the existing Logger levels rather
+than bespoke on/off plumbing. Implement when Settings handling is built.
