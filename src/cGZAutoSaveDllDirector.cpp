@@ -74,8 +74,51 @@ public:
 		return kRegionUpdatePluginDirectorID;
 	}
 
-	// Walks every tile in the current region and logs its details.
-	// This is the Planner's core data-gathering, proven here by logging.
+	// --- Region enumeration + adjacency ---
+
+	// A simple record of one tile, gathered during enumeration.
+	struct TileInfo
+	{
+		int32_t x, z;           // origin (top-left) cell position
+		int32_t sizeX, sizeZ;   // size in cells (small 1x1, medium 2x2, large 4x4)
+		bool established;
+	};
+
+	// Returns true if two tiles share an edge (NOT merely a corner).
+	// Each tile occupies cells [origin .. origin + size - 1] in both axes.
+	// Corner-only contact is deliberately excluded (matches the research: two
+	// tiles meeting at a single corner point are not neighbours).
+	bool AreEdgeAdjacent(
+		int32_t ax, int32_t az, int32_t asx, int32_t asz,   // tile A: pos + size
+		int32_t bx, int32_t bz, int32_t bsx, int32_t bsz)   // tile B: pos + size
+	{
+		// Each tile's inclusive cell span.
+		int32_t aLeft = ax, aRight = ax + asx - 1;
+		int32_t aTop = az, aBottom = az + asz - 1;
+		int32_t bLeft = bx, bRight = bx + bsx - 1;
+		int32_t bTop = bz, bBottom = bz + bsz - 1;
+
+		// Do the two tiles' vertical spans overlap by at least one cell?
+		bool vertOverlap = (aTop <= bBottom) && (bTop <= aBottom);
+		// Do their horizontal spans overlap by at least one cell?
+		bool horizOverlap = (aLeft <= bRight) && (bLeft <= aRight);
+
+		// Side-by-side horizontally (A's right meets B's left, or vice versa)
+		// AND their vertical spans overlap => a genuine shared vertical edge.
+		bool horizAdjacent =
+			((aRight + 1 == bLeft) || (bRight + 1 == aLeft)) && vertOverlap;
+
+		// Stacked vertically (A's bottom meets B's top, or vice versa)
+		// AND their horizontal spans overlap => a genuine shared horizontal edge.
+		bool vertAdjacent =
+			((aBottom + 1 == bTop) || (bBottom + 1 == aTop)) && horizOverlap;
+
+		return horizAdjacent || vertAdjacent;
+	}
+
+	// Reads every established tile in the current region, then computes and
+	// logs which pairs are edge-adjacent. This is the Planner's core data:
+	// the tile list and the adjacency graph.
 	void EnumerateRegionTiles()
 	{
 		Logger& logger = Logger::GetInstance();
@@ -94,22 +137,20 @@ public:
 		logger.WriteLineFormatted(LogLevel::Info,
 			"  region bounds: x %d..%d, y %d..%d", minX, maxX, minY, maxY);
 
-		// Scan every cell in bounds. A multi-cell tile appears once per cell,
-		// so we de-duplicate by the tile's reported origin position.
-		std::vector<std::pair<int32_t, int32_t>> seenPositions;
-		int uniqueTiles = 0;
-		int establishedTiles = 0;
+		// Gather unique tiles. A multi-cell tile appears once per cell it
+		// occupies, so we de-duplicate by the tile's reported origin position.
+		std::vector<TileInfo> tiles;
 
 		for (int32_t y = minY; y <= maxY; y++)
 		{
 			for (int32_t x = minX; x <= maxX; x++)
 			{
-				auto ppCity = pRegion->GetCity(
+				cISC4RegionalCity** ppCity = pRegion->GetCity(
 					static_cast<uint32_t>(x), static_cast<uint32_t>(y));
 
 				if (!ppCity || !*ppCity)
 				{
-					continue;   // Empty cell (no tile here).
+					continue;   // Empty cell (no established city here).
 				}
 
 				cISC4RegionalCity* pCity = *ppCity;
@@ -117,43 +158,56 @@ public:
 				int32_t px = 0, pz = 0;
 				pCity->GetPosition(px, pz);
 
-				// Skip if we've already recorded this tile (from another of its cells).
-				bool alreadySeen = false;
-				for (const auto& p : seenPositions)
+				// Skip if we've already recorded this tile via another of its cells.
+				bool seen = false;
+				for (const auto& t : tiles)
 				{
-					if (p.first == px && p.second == pz)
-					{
-						alreadySeen = true;
-						break;
-					}
+					if (t.x == px && t.z == pz) { seen = true; break; }
 				}
-				if (alreadySeen)
-				{
-					continue;
-				}
-				seenPositions.push_back({ px, pz });
+				if (seen) { continue; }
 
-				// First time seeing this tile: record its details.
 				int32_t sx = 0, sz = 0;
 				pCity->GetCitySize(sx, sz);
 				bool est = pCity->GetEstablished();
 
-				uniqueTiles++;
-				if (est)
-				{
-					establishedTiles++;
-				}
+				tiles.push_back({ px, pz, sx, sz, est });
+			}
+		}
 
-				logger.WriteLineFormatted(LogLevel::Info,
-					"  Tile: pos(%d,%d) size %dx%d established=%s",
-					px, pz, sx, sz, est ? "yes" : "no");
+		// Log the tile list.
+		logger.WriteLineFormatted(LogLevel::Info, "  Found %zu unique tile(s):", tiles.size());
+		for (const auto& t : tiles)
+		{
+			logger.WriteLineFormatted(LogLevel::Info,
+				"    pos(%d,%d) size %dx%d established=%s",
+				t.x, t.z, t.sizeX, t.sizeZ, t.established ? "yes" : "no");
+		}
+
+		// Compute and log edge-adjacency for every unique pair of tiles.
+		logger.WriteLine(LogLevel::Info, "  Adjacent pairs (shared edge, corners excluded):");
+		int pairCount = 0;
+		for (size_t i = 0; i < tiles.size(); i++)
+		{
+			for (size_t j = i + 1; j < tiles.size(); j++)
+			{
+				if (AreEdgeAdjacent(
+					tiles[i].x, tiles[i].z, tiles[i].sizeX, tiles[i].sizeZ,
+					tiles[j].x, tiles[j].z, tiles[j].sizeX, tiles[j].sizeZ))
+				{
+					pairCount++;
+					logger.WriteLineFormatted(LogLevel::Info,
+						"    (%d,%d) <-> (%d,%d)",
+						tiles[i].x, tiles[i].z, tiles[j].x, tiles[j].z);
+				}
 			}
 		}
 
 		logger.WriteLineFormatted(LogLevel::Info,
-			"=== END: %d unique tiles (%d established) ===",
-			uniqueTiles, establishedTiles);
+			"=== END: %zu tile(s), %d adjacent pair(s) ===",
+			tiles.size(), pairCount);
 	}
+
+	// --- end region enumeration + adjacency ---
 
 	// The switchboard: routes subscribed events to their handlers.
 	bool DoMessage(cIGZMessage2* pMessage)
@@ -176,7 +230,7 @@ public:
 		return true;
 	}
 
-	// At startup, subscribe to the "region entered" event.
+	// At startup, subscribe to cheat messages and register our cheat code.
 	bool PostAppInit()
 	{
 		Logger::GetInstance().WriteLine(LogLevel::Info, "PostAppInit: starting.");
